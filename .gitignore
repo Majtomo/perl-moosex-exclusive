@@ -1,6 +1,3 @@
-# Claude Code directory
-.claude/
-
 # Perl build artifacts
 Makefile
 Makefile.old

@@ -7,14 +7,15 @@ WriteMakefile(
     AUTHOR           => 'Jean-Antoine RINALDY <m4jtom@gmail.com>',
     VERSION_FROM     => 'lib/MooseX/Trait/ExclusiveAttributes.pm',
     ABSTRACT         => 'A trait for mutually exclusive attributes',
-    LICENSE          => 'perl_5',
+    LICENSE          => 'artistic_2',
     PL_FILES         => {},
-    MIN_PERL_VERSION => '5.010',
+    MIN_PERL_VERSION => '5.036',
     CONFIGURE_REQUIRES => {
         'ExtUtils::MakeMaker' => '0',
     },
     BUILD_REQUIRES => {
         'Test::More' => '0',
+        'Test::Exception' => '0',
     },
     PREREQ_PM => {
         'Moose' => '2.0',
