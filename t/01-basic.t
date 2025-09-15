@@ -7,12 +7,13 @@ use_ok('MooseX::Trait::ExclusiveAttributes');
 
 # Test class with exclusive attributes
 {
+
     package TestClass;
     use MooseX::Trait::ExclusiveAttributes;
 
     has 'mode_a' => (
-        is      => 'rw',
-        isa     => 'Str',
+        is             => 'rw',
+        isa            => 'Str',
         conflicts_with => 'mode_b',
     );
 
@@ -29,7 +30,8 @@ my $obj = TestClass->new();
 $obj->mode_b('value_b');
 is( $obj->mode_b, 'value_b', 'mode_b initially set' );
 
-dies_ok { $obj->mode_a('value_a') } 'Setting mode_a when mode_b is set throws error';
+dies_ok { $obj->mode_a('value_a') }
+'Setting mode_a when mode_b is set throws error';
 
 # Test setting mode_a when mode_b is not set works
 my $obj2 = TestClass->new();

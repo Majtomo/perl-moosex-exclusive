@@ -12,8 +12,8 @@ use_ok('MooseX::Trait::ExclusiveAttributes');
     use MooseX::Trait::ExclusiveAttributes;
 
     has 'mode_a' => (
-        is      => 'rw',
-        isa     => 'Str',
+        is             => 'rw',
+        isa            => 'Str',
         conflicts_with => 'mode_b',
     );
 
@@ -30,7 +30,8 @@ my $obj = TestClass->new();
 $obj->mode_b('value_b');
 is( $obj->mode_b, 'value_b', 'mode_b initially set' );
 
-dies_ok { $obj->mode_a('value_a') } 'Setting mode_a when mode_b is set throws error';
+dies_ok { $obj->mode_a('value_a') }
+'Setting mode_a when mode_b is set throws error';
 
 # Test setting mode_a when mode_b is not set works
 my $obj2 = TestClass->new();
@@ -40,23 +41,26 @@ is( $obj2->mode_a, 'value_a', 'mode_a set correctly' );
 
 # Test self-exclusion validation
 dies_ok {
+
     package BadClass;
     use MooseX::Trait::ExclusiveAttributes;
 
     has 'self_exclude' => (
-        is      => 'rw',
+        is             => 'rw',
         conflicts_with => 'self_exclude',
     );
-} 'Cannot conflict with self';
+}
+'Cannot conflict with self';
 
 # Test with readonly attributes during instantiation
 {
+
     package ROClass;
     use MooseX::Trait::ExclusiveAttributes;
 
     has 'option_a' => (
-        is      => 'ro',
-        isa     => 'Str',
+        is             => 'ro',
+        isa            => 'Str',
         conflicts_with => 'option_b',
     );
 
@@ -79,17 +83,19 @@ ok( !$ro_obj2->option_a, 'option_a not set' );
 # Test instantiation with both readonly attributes (should fail)
 dies_ok {
     ROClass->new( option_a => 'value_a', option_b => 'value_b' );
-} 'Cannot instantiate with both exclusive readonly attributes';
+}
+'Cannot instantiate with both exclusive readonly attributes';
 
 # Test with multiple attribute exclusion
 {
+
     package MultiExcludeClass;
     use MooseX::Trait::ExclusiveAttributes;
 
     has 'primary' => (
-        is      => 'rw',
-        isa     => 'Str',
-        conflicts_with => ['alt1', 'alt2'],
+        is             => 'rw',
+        isa            => 'Str',
+        conflicts_with => [ 'alt1', 'alt2' ],
     );
 
     has 'alt1' => (
@@ -106,73 +112,83 @@ dies_ok {
 # Test setting primary attribute works
 my $multi_obj = MultiExcludeClass->new();
 eval { $multi_obj->primary('primary_value') };
-ok( !$@, 'Setting primary when no alternatives are set works' ) or diag("Error: $@");
+ok( !$@, 'Setting primary when no alternatives are set works' )
+  or diag("Error: $@");
 is( $multi_obj->primary, 'primary_value', 'primary set correctly' );
 
 # Test setting primary when alt1 is set fails
 my $multi_obj2 = MultiExcludeClass->new();
 $multi_obj2->alt1('alt1_value');
-dies_ok { $multi_obj2->primary('primary_value') } 'Cannot set primary when alt1 is already set';
+dies_ok { $multi_obj2->primary('primary_value') }
+'Cannot set primary when alt1 is already set';
 
 # Test setting primary when alt2 is set fails
 my $multi_obj3 = MultiExcludeClass->new();
 $multi_obj3->alt2('alt2_value');
-dies_ok { $multi_obj3->primary('primary_value') } 'Cannot set primary when alt2 is already set';
+dies_ok { $multi_obj3->primary('primary_value') }
+'Cannot set primary when alt2 is already set';
 
 # Test constructor exclusion with multiple attributes
 dies_ok {
     MultiExcludeClass->new( primary => 'primary_value', alt1 => 'alt1_value' );
-} 'Cannot instantiate with primary and alt1';
+}
+'Cannot instantiate with primary and alt1';
 
 dies_ok {
     MultiExcludeClass->new( primary => 'primary_value', alt2 => 'alt2_value' );
-} 'Cannot instantiate with primary and alt2';
+}
+'Cannot instantiate with primary and alt2';
 
 # Test array self-exclusion validation
 dies_ok {
+
     package BadMultiClass;
     use MooseX::Trait::ExclusiveAttributes;
 
     has 'self_multi_exclude' => (
-        is      => 'rw',
-        conflicts_with => ['other', 'self_multi_exclude'],
+        is             => 'rw',
+        conflicts_with => [ 'other', 'self_multi_exclude' ],
     );
-} 'Cannot conflict with self in array';
+}
+'Cannot conflict with self in array';
 
 # Test non-existent attribute exclusion validation
 dies_ok {
+
     package NonExistentClass;
     use MooseX::Trait::ExclusiveAttributes;
 
     has 'valid_attr' => (
-        is      => 'rw',
+        is             => 'rw',
         conflicts_with => 'non_existent_attr',
     );
 
     # Trigger validation by creating an instance
     NonExistentClass->new();
-} 'Cannot conflict with non-existent attribute';
+}
+'Cannot conflict with non-existent attribute';
 
 # Test non-existent attribute in array exclusion
 dies_ok {
+
     package NonExistentArrayClass;
     use MooseX::Trait::ExclusiveAttributes;
 
     has 'valid_attr' => (
-        is      => 'rw',
-        conflicts_with => ['existing_attr', 'non_existent_attr'],
+        is             => 'rw',
+        conflicts_with => [ 'existing_attr', 'non_existent_attr' ],
     );
 
-    has 'existing_attr' => (
-        is => 'rw',
-    );
+    has 'existing_attr' => ( is => 'rw', );
 
     # Trigger validation by creating an instance
     NonExistentArrayClass->new();
-} 'Cannot conflict with non-existent attribute in array';
+}
+'Cannot conflict with non-existent attribute in array';
 
 # Test inheritance support
 {
+
     package BaseClass;
     use MooseX::Trait::ExclusiveAttributes;
 
@@ -183,13 +199,14 @@ dies_ok {
 }
 
 {
+
     package ChildClass;
     use MooseX::Trait::ExclusiveAttributes;
     extends 'BaseClass';
 
     has 'child_attr' => (
-        is           => 'rw',
-        isa          => 'Str',
+        is             => 'rw',
+        isa            => 'Str',
         conflicts_with => 'base_attr',
     );
 }
@@ -201,7 +218,8 @@ is( $inherit_obj->base_attr, 'base_value', 'inherited attribute set' );
 
 dies_ok {
     $inherit_obj->child_attr('child_value');
-} 'Child attribute conflicts with inherited attribute';
+}
+'Child attribute conflicts with inherited attribute';
 
 # Test constructor conflict checking with inheritance
 dies_ok {
@@ -209,7 +227,8 @@ dies_ok {
         base_attr  => 'base_value',
         child_attr => 'child_value'
     );
-} 'Constructor rejects conflicting inherited attributes';
+}
+'Constructor rejects conflicting inherited attributes';
 
 # Test valid inheritance usage
 my $valid_inherit = ChildClass->new( base_attr => 'base_only' );

@@ -7,6 +7,7 @@ use_ok('MooseX::Trait::ExclusiveAttributes');
 
 # Test inheritance support
 {
+
     package BaseClass;
     use MooseX::Trait::ExclusiveAttributes;
 
@@ -17,13 +18,14 @@ use_ok('MooseX::Trait::ExclusiveAttributes');
 }
 
 {
+
     package ChildClass;
     use MooseX::Trait::ExclusiveAttributes;
     extends 'BaseClass';
 
     has 'child_attr' => (
-        is           => 'rw',
-        isa          => 'Str',
+        is             => 'rw',
+        isa            => 'Str',
         conflicts_with => 'base_attr',
     );
 }
@@ -35,7 +37,8 @@ is( $inherit_obj->base_attr, 'base_value', 'inherited attribute set' );
 
 dies_ok {
     $inherit_obj->child_attr('child_value');
-} 'Child attribute conflicts with inherited attribute';
+}
+'Child attribute conflicts with inherited attribute';
 
 # Test constructor conflict checking with inheritance
 dies_ok {
@@ -43,7 +46,8 @@ dies_ok {
         base_attr  => 'base_value',
         child_attr => 'child_value'
     );
-} 'Constructor rejects conflicting inherited attributes';
+}
+'Constructor rejects conflicting inherited attributes';
 
 # Test valid inheritance usage
 my $valid_inherit = ChildClass->new( base_attr => 'base_only' );

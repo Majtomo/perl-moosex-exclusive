@@ -7,12 +7,13 @@ use_ok('MooseX::Trait::ExclusiveAttributes');
 
 # Test with readonly attributes during instantiation
 {
+
     package ROClass;
     use MooseX::Trait::ExclusiveAttributes;
 
     has 'option_a' => (
-        is      => 'ro',
-        isa     => 'Str',
+        is             => 'ro',
+        isa            => 'Str',
         conflicts_with => 'option_b',
     );
 
@@ -35,6 +36,7 @@ ok( !$ro_obj2->option_a, 'option_a not set' );
 # Test instantiation with both readonly attributes (should fail)
 dies_ok {
     ROClass->new( option_a => 'value_a', option_b => 'value_b' );
-} 'Cannot instantiate with both exclusive readonly attributes';
+}
+'Cannot instantiate with both exclusive readonly attributes';
 
 done_testing();
