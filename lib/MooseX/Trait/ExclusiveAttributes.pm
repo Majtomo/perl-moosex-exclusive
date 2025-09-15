@@ -43,46 +43,61 @@ has '_init_exclusive_attributes' => (
     default => sub { {} },
 );
 
+has '_runtime_exclusive_attributes' => (
+    is      => 'ro',
+    isa     => 'HashRef',
+    default => sub { {} },
+);
+
 has '_exclusions_validated' => (
     is      => 'rw',
     isa     => 'Bool',
     default => 0,
 );
 
-around '_process_new_attribute' => sub ( $orig, $self, $name, %options ) {
+sub _process_conflict_options ( $self, $name, $options ) {
     my $conflicts_with;
     my $init_conflicts_with;
+    my $runtime_conflicts_with;
 
-    if ( exists $options{conflicts_with} ) {
-        $conflicts_with = delete $options{conflicts_with};
+    if ( exists $options->{conflicts_with} ) {
+        $conflicts_with = delete $options->{conflicts_with};
+        $conflicts_with = $self->_normalize_and_validate_conflicts( $name, $conflicts_with, 'conflict' );
+    }
 
-        # Normalize conflicts_with to arrayref
-        $conflicts_with = ref($conflicts_with) eq 'ARRAY' ? $conflicts_with : [$conflicts_with];
+    if ( exists $options->{init_conflicts_with} ) {
+        $init_conflicts_with = delete $options->{init_conflicts_with};
+        $init_conflicts_with = $self->_normalize_and_validate_conflicts( $name, $init_conflicts_with, 'init_conflict' );
+    }
 
-        # Validate that conflicts_with does not contain the attribute itself
-        for my $conflicting_attr (@$conflicts_with) {
-            if ( $conflicting_attr eq $name ) {
-                Moose->throw_error("Attribute '$name' cannot conflict with itself");
-            }
+    if ( exists $options->{runtime_conflicts_with} ) {
+        $runtime_conflicts_with = delete $options->{runtime_conflicts_with};
+        $runtime_conflicts_with = $self->_normalize_and_validate_conflicts( $name, $runtime_conflicts_with, 'runtime_conflict' );
+    }
+
+    return ( $conflicts_with, $init_conflicts_with, $runtime_conflicts_with );
+}
+
+sub _normalize_and_validate_conflicts ( $self, $attr_name, $conflicts, $conflict_type ) {
+    # Normalize to arrayref
+    my $normalized = ref($conflicts) eq 'ARRAY' ? $conflicts : [$conflicts];
+
+    # Validate that conflicts does not contain the attribute itself
+    for my $conflicting_attr (@$normalized) {
+        if ( $conflicting_attr eq $attr_name ) {
+            my $error_msg = $conflict_type eq 'init_conflict' 
+                ? "Attribute '$attr_name' cannot init_conflict with itself"
+                : $conflict_type eq 'runtime_conflict'
+                ? "Attribute '$attr_name' cannot runtime_conflict with itself"
+                : "Attribute '$attr_name' cannot conflict with itself";
+            Moose->throw_error($error_msg);
         }
     }
 
-    if ( exists $options{init_conflicts_with} ) {
-        $init_conflicts_with = delete $options{init_conflicts_with};
+    return $normalized;
+}
 
-        # Normalize init_conflicts_with to arrayref
-        $init_conflicts_with = ref($init_conflicts_with) eq 'ARRAY' ? $init_conflicts_with : [$init_conflicts_with];
-
-        # Validate that init_conflicts_with does not contain the attribute itself
-        for my $conflicting_attr (@$init_conflicts_with) {
-            if ( $conflicting_attr eq $name ) {
-                Moose->throw_error("Attribute '$name' cannot init_conflict with itself");
-            }
-        }
-    }
-
-    my $attr = $self->$orig( $name, %options );
-
+sub _register_conflicts ( $self, $name, $conflicts_with, $init_conflicts_with, $runtime_conflicts_with ) {
     if ( $conflicts_with ) {
         # Store conflict relationship
         $self->_exclusive_attributes->{$name} = $conflicts_with;
@@ -94,56 +109,32 @@ around '_process_new_attribute' => sub ( $orig, $self, $name, %options ) {
         # Store init-only conflict relationship (no runtime checking)
         $self->_init_exclusive_attributes->{$name} = $init_conflicts_with;
     }
+
+    if ( $runtime_conflicts_with ) {
+        # Store runtime-only conflict relationship
+        $self->_runtime_exclusive_attributes->{$name} = $runtime_conflicts_with;
+        # Install conflict checking behavior after attribute creation
+        $self->_setup_exclusion( $name, $runtime_conflicts_with );
+    }
+}
+
+around '_process_new_attribute' => sub ( $orig, $self, $name, %options ) {
+    my ( $conflicts_with, $init_conflicts_with, $runtime_conflicts_with ) = $self->_process_conflict_options( $name, \%options );
+
+    my $attr = $self->$orig( $name, %options );
+
+    $self->_register_conflicts( $name, $conflicts_with, $init_conflicts_with, $runtime_conflicts_with );
 
     return $attr;
 };
 
 # Also catch add_attribute calls to ensure we handle all cases
 around 'add_attribute' => sub ( $orig, $self, $name, %options ) {
-    my $conflicts_with;
-    my $init_conflicts_with;
-
-    if ( exists $options{conflicts_with} ) {
-        $conflicts_with = delete $options{conflicts_with};
-
-        # Normalize conflicts_with to arrayref
-        $conflicts_with = ref($conflicts_with) eq 'ARRAY' ? $conflicts_with : [$conflicts_with];
-
-        # Validate that conflicts_with does not contain the attribute itself
-        for my $conflicting_attr (@$conflicts_with) {
-            if ( $conflicting_attr eq $name ) {
-                Moose->throw_error("Attribute '$name' cannot conflict with itself");
-            }
-        }
-    }
-
-    if ( exists $options{init_conflicts_with} ) {
-        $init_conflicts_with = delete $options{init_conflicts_with};
-
-        # Normalize init_conflicts_with to arrayref
-        $init_conflicts_with = ref($init_conflicts_with) eq 'ARRAY' ? $init_conflicts_with : [$init_conflicts_with];
-
-        # Validate that init_conflicts_with does not contain the attribute itself
-        for my $conflicting_attr (@$init_conflicts_with) {
-            if ( $conflicting_attr eq $name ) {
-                Moose->throw_error("Attribute '$name' cannot init_conflict with itself");
-            }
-        }
-    }
+    my ( $conflicts_with, $init_conflicts_with, $runtime_conflicts_with ) = $self->_process_conflict_options( $name, \%options );
 
     my $attr = $self->$orig( $name, %options );
 
-    if ( $conflicts_with ) {
-        # Store conflict relationship
-        $self->_exclusive_attributes->{$name} = $conflicts_with;
-        # Install conflict checking behavior after attribute creation
-        $self->_setup_exclusion( $name, $conflicts_with );
-    }
-
-    if ( $init_conflicts_with ) {
-        # Store init-only conflict relationship (no runtime checking)
-        $self->_init_exclusive_attributes->{$name} = $init_conflicts_with;
-    }
+    $self->_register_conflicts( $name, $conflicts_with, $init_conflicts_with, $runtime_conflicts_with );
 
     return $attr;
 };
@@ -157,37 +148,9 @@ around 'new_object' => sub {
     $self->_validate_exclusions;
 
     # Check for conflicting attributes in constructor parameters
-    my $exclusions = $self->_exclusive_attributes;
-    my $init_exclusions = $self->_init_exclusive_attributes;
-
     if ( ref($params) eq 'HASH' ) {
-        # Check runtime conflicts
-        for my $attr_name ( keys %$exclusions ) {
-            my $conflicting_attrs = $exclusions->{$attr_name};
-
-            if ( exists $params->{$attr_name} ) {
-                for my $conflicting_attr (@$conflicting_attrs) {
-                    # Check if the conflicting attribute exists in this class hierarchy
-                    if ( $self->find_attribute_by_name($conflicting_attr) && exists $params->{$conflicting_attr} ) {
-                        Moose->throw_error("Cannot set both '$attr_name' and '$conflicting_attr' - they conflict with each other");
-                    }
-                }
-            }
-        }
-
-        # Check init-only conflicts
-        for my $attr_name ( keys %$init_exclusions ) {
-            my $conflicting_attrs = $init_exclusions->{$attr_name};
-
-            if ( exists $params->{$attr_name} ) {
-                for my $conflicting_attr (@$conflicting_attrs) {
-                    # Check if the conflicting attribute exists in this class hierarchy
-                    if ( $self->find_attribute_by_name($conflicting_attr) && exists $params->{$conflicting_attr} ) {
-                        Moose->throw_error("Cannot set both '$attr_name' and '$conflicting_attr' during initialization - they conflict with each other");
-                    }
-                }
-            }
-        }
+        $self->_check_constructor_conflicts( $params, $self->_exclusive_attributes, 'runtime' );
+        $self->_check_constructor_conflicts( $params, $self->_init_exclusive_attributes, 'init' );
     }
 
     return $self->$orig($params, @_);
@@ -201,32 +164,46 @@ after 'make_immutable' => sub {
 sub _validate_exclusions ($self) {
     return if $self->_exclusions_validated;
 
-    my $exclusions = $self->_exclusive_attributes;
-    my $init_exclusions = $self->_init_exclusive_attributes;
+    $self->_validate_exclusion_group( $self->_exclusive_attributes, 'conflicts' );
+    $self->_validate_exclusion_group( $self->_init_exclusive_attributes, 'init_conflicts' );
+    $self->_validate_exclusion_group( $self->_runtime_exclusive_attributes, 'runtime_conflicts' );
 
-    # Validate runtime exclusions
+    $self->_exclusions_validated(1);
+}
+
+sub _validate_exclusion_group ( $self, $exclusions, $conflict_type ) {
     for my $attr_name (keys %$exclusions) {
         my $conflicting_attrs = $exclusions->{$attr_name};
 
         for my $conflicting_attr (@$conflicting_attrs) {
             unless ($self->find_attribute_by_name($conflicting_attr)) {
-                Moose->throw_error("Attribute '$attr_name' conflicts with non-existent attribute '$conflicting_attr'");
+                my $error_msg = $conflict_type eq 'init_conflicts'
+                    ? "Attribute '$attr_name' init_conflicts with non-existent attribute '$conflicting_attr'"
+                    : $conflict_type eq 'runtime_conflicts'
+                    ? "Attribute '$attr_name' runtime_conflicts with non-existent attribute '$conflicting_attr'"
+                    : "Attribute '$attr_name' conflicts with non-existent attribute '$conflicting_attr'";
+                Moose->throw_error($error_msg);
             }
         }
     }
+}
 
-    # Validate init-only exclusions
-    for my $attr_name (keys %$init_exclusions) {
-        my $conflicting_attrs = $init_exclusions->{$attr_name};
+sub _check_constructor_conflicts ( $self, $params, $exclusions, $conflict_type ) {
+    for my $attr_name ( keys %$exclusions ) {
+        my $conflicting_attrs = $exclusions->{$attr_name};
 
-        for my $conflicting_attr (@$conflicting_attrs) {
-            unless ($self->find_attribute_by_name($conflicting_attr)) {
-                Moose->throw_error("Attribute '$attr_name' init_conflicts with non-existent attribute '$conflicting_attr'");
+        if ( exists $params->{$attr_name} ) {
+            for my $conflicting_attr (@$conflicting_attrs) {
+                # Check if the conflicting attribute exists in this class hierarchy
+                if ( $self->find_attribute_by_name($conflicting_attr) && exists $params->{$conflicting_attr} ) {
+                    my $error_msg = $conflict_type eq 'init'
+                        ? "Cannot set both '$attr_name' and '$conflicting_attr' during initialization - they conflict with each other"
+                        : "Cannot set both '$attr_name' and '$conflicting_attr' - they conflict with each other";
+                    Moose->throw_error($error_msg);
+                }
             }
         }
     }
-
-    $self->_exclusions_validated(1);
 }
 
 sub _setup_exclusion ( $self, $name, $conflicts_with ) {
@@ -239,22 +216,25 @@ sub _setup_exclusion ( $self, $name, $conflicts_with ) {
     $self->add_around_method_modifier(
         $writer,
         sub {
-            my ( $orig, $instance, $value ) = @_;
+            my ( $orig, $instance, @args ) = @_;
 
-            # Validate exclusions before proceeding
-            $self->_validate_exclusions;
+            # Only check conflicts if we're setting a value (i.e., arguments are provided)
+            if ( @args ) {
+                # Validate exclusions before proceeding
+                $self->_validate_exclusions;
 
-            # Check if any of the conflicting attributes has been set (has a value)
-            for my $conflicting_attr_name (@$conflicts_with) {
-                my $conflicting_attr = $self->find_attribute_by_name($conflicting_attr_name);
-                if ( $conflicting_attr ) {
-                    if ( $conflicting_attr->has_value($instance) ) {
-                        Moose->throw_error("Cannot set '$name' because '$conflicting_attr_name' is already set (they conflict)");
+                # Check if any of the conflicting attributes has been set (has a value)
+                for my $conflicting_attr_name (@$conflicts_with) {
+                    my $conflicting_attr = $self->find_attribute_by_name($conflicting_attr_name);
+                    if ( $conflicting_attr ) {
+                        if ( $conflicting_attr->has_value($instance) ) {
+                            Moose->throw_error("Cannot set '$name' because '$conflicting_attr_name' is already set (they conflict)");
+                        }
                     }
                 }
             }
 
-            return $orig->(@_[1..$#_]);
+            return $orig->($instance, @args);
         }
     );
 }
@@ -301,9 +281,17 @@ Version 0.01
         init_conflicts_with => 'config_b',  # Cannot construct with both, but can set after construction
     );
 
+    # Runtime-only conflicts (only checked during runtime, not construction)
+    has 'runtime_a' => (
+        is                    => 'rw',
+        isa                   => 'Str',
+        runtime_conflicts_with => 'runtime_b',  # Can construct with both, but cannot set when other is set
+    );
+
     has 'alt1' => ( is => 'rw', isa => 'Str' );
     has 'alt2' => ( is => 'rw', isa => 'Str' );
     has 'config_b' => ( is => 'rw', isa => 'Str' );
+    has 'runtime_b' => ( is => 'rw', isa => 'Str' );
 
     my $obj = MyClass->new();
     $obj->mode_b('some_value');
@@ -318,6 +306,8 @@ The 'conflicts_with' option can reference a single attribute (as a string) or mu
 Conflict checking is performed both at runtime (when calling setters) and during object construction (when passing conflicting attributes to new()).
 
 The 'init_conflicts_with' option works like 'conflicts_with' but only checks conflicts during object construction, not at runtime. This allows you to prevent conflicting attributes from being set together during initialization while still allowing them to be set independently after construction.
+
+The 'runtime_conflicts_with' option works like 'conflicts_with' but only checks conflicts at runtime, not during object construction. This allows you to construct objects with conflicting attributes set, but prevents them from being modified when the conflicting attribute already has a value.
 
 =head1 AUTHORS
 
