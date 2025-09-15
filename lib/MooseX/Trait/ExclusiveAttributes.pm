@@ -31,12 +31,6 @@ sub init_meta ( $class, %args ) {
 package MooseX::Trait::ExclusiveAttributes::Meta::Class;
 use Moose::Role;
 
-has '_exclusive_attributes' => (
-    is      => 'ro',
-    isa     => 'HashRef',
-    default => sub { {} },
-);
-
 has '_init_exclusive_attributes' => (
     is      => 'ro',
     isa     => 'HashRef',
@@ -55,27 +49,30 @@ has '_exclusions_validated' => (
     default => 0,
 );
 
-sub _process_conflict_options ( $self, $name, $options ) {
-    my $conflicts_with;
-    my $init_conflicts_with;
-    my $runtime_conflicts_with;
+sub _process_conflict_options ( $self, $attr_name, $options ) {
+    my $conflicts;
 
     if ( exists $options->{conflicts_with} ) {
-        $conflicts_with = delete $options->{conflicts_with};
-        $conflicts_with = $self->_normalize_and_validate_conflicts( $name, $conflicts_with, 'conflict' );
+        $conflicts->{conflicts_with} =
+          $self->_normalize_and_validate_conflicts( $attr_name,
+            delete $options->{conflicts_with}, 'conflict' );
     }
 
     if ( exists $options->{init_conflicts_with} ) {
-        $init_conflicts_with = delete $options->{init_conflicts_with};
-        $init_conflicts_with = $self->_normalize_and_validate_conflicts( $name, $init_conflicts_with, 'init_conflict' );
+        $conflicts->{init_conflicts_with} =
+          $self->_normalize_and_validate_conflicts( $attr_name,
+            delete $options->{init_conflicts_with},
+            'init_conflict' );
     }
 
     if ( exists $options->{runtime_conflicts_with} ) {
-        $runtime_conflicts_with = delete $options->{runtime_conflicts_with};
-        $runtime_conflicts_with = $self->_normalize_and_validate_conflicts( $name, $runtime_conflicts_with, 'runtime_conflict' );
+        $conflicts->{runtime_conflicts_with} =
+          $self->_normalize_and_validate_conflicts( $attr_name,
+            delete $options->{runtime_conflicts_with},
+            'runtime_conflict' );
     }
 
-    return ( $conflicts_with, $init_conflicts_with, $runtime_conflicts_with );
+    return $conflicts;
 }
 
 sub _normalize_and_validate_conflicts ( $self, $attr_name, $conflicts, $conflict_type ) {
@@ -97,44 +94,45 @@ sub _normalize_and_validate_conflicts ( $self, $attr_name, $conflicts, $conflict
     return $normalized;
 }
 
-sub _register_conflicts ( $self, $name, $conflicts_with, $init_conflicts_with, $runtime_conflicts_with ) {
-    if ( $conflicts_with ) {
-        # Store conflict relationship
-        $self->_exclusive_attributes->{$name} = $conflicts_with;
+sub _register_conflicts ( $self, $name, $conflicts ) {
+    if ( exists $conflicts->{conflicts_with} ) {
+        # Store in both init and runtime since conflicts_with applies to both
+        $self->_init_exclusive_attributes->{$name} = $conflicts->{conflicts_with};
+        $self->_runtime_exclusive_attributes->{$name} = $conflicts->{conflicts_with};
         # Install conflict checking behavior after attribute creation
-        $self->_setup_exclusion( $name, $conflicts_with );
+        $self->_setup_exclusion( $name, $conflicts->{conflicts_with} );
     }
 
-    if ( $init_conflicts_with ) {
+    if ( exists $conflicts->{init_conflicts_with} ) {
         # Store init-only conflict relationship (no runtime checking)
-        $self->_init_exclusive_attributes->{$name} = $init_conflicts_with;
+        $self->_init_exclusive_attributes->{$name} = $conflicts->{init_conflicts_with};
     }
 
-    if ( $runtime_conflicts_with ) {
+    if ( exists $conflicts->{runtime_conflicts_with} ) {
         # Store runtime-only conflict relationship
-        $self->_runtime_exclusive_attributes->{$name} = $runtime_conflicts_with;
+        $self->_runtime_exclusive_attributes->{$name} = $conflicts->{runtime_conflicts_with};
         # Install conflict checking behavior after attribute creation
-        $self->_setup_exclusion( $name, $runtime_conflicts_with );
+        $self->_setup_exclusion( $name, $conflicts->{runtime_conflicts_with} );
     }
 }
 
 around '_process_new_attribute' => sub ( $orig, $self, $name, %options ) {
-    my ( $conflicts_with, $init_conflicts_with, $runtime_conflicts_with ) = $self->_process_conflict_options( $name, \%options );
+    my $conflicts = $self->_process_conflict_options( $name, \%options );
 
     my $attr = $self->$orig( $name, %options );
 
-    $self->_register_conflicts( $name, $conflicts_with, $init_conflicts_with, $runtime_conflicts_with );
+    $self->_register_conflicts( $name, $conflicts );
 
     return $attr;
 };
 
 # Also catch add_attribute calls to ensure we handle all cases
 around 'add_attribute' => sub ( $orig, $self, $name, %options ) {
-    my ( $conflicts_with, $init_conflicts_with, $runtime_conflicts_with ) = $self->_process_conflict_options( $name, \%options );
+    my $conflicts = $self->_process_conflict_options( $name, \%options );
 
     my $attr = $self->$orig( $name, %options );
 
-    $self->_register_conflicts( $name, $conflicts_with, $init_conflicts_with, $runtime_conflicts_with );
+    $self->_register_conflicts( $name, $conflicts );
 
     return $attr;
 };
@@ -149,7 +147,6 @@ around 'new_object' => sub {
 
     # Check for conflicting attributes in constructor parameters
     if ( ref($params) eq 'HASH' ) {
-        $self->_check_constructor_conflicts( $params, $self->_exclusive_attributes, 'runtime' );
         $self->_check_constructor_conflicts( $params, $self->_init_exclusive_attributes, 'init' );
     }
 
@@ -164,9 +161,24 @@ after 'make_immutable' => sub {
 sub _validate_exclusions ($self) {
     return if $self->_exclusions_validated;
 
-    $self->_validate_exclusion_group( $self->_exclusive_attributes, 'conflicts' );
-    $self->_validate_exclusion_group( $self->_init_exclusive_attributes, 'init_conflicts' );
-    $self->_validate_exclusion_group( $self->_runtime_exclusive_attributes, 'runtime_conflicts' );
+    # Validate all conflicts - we use a hash to avoid duplicate validation
+    # since conflicts_with appears in both init and runtime groups
+    my %all_conflicts;
+    
+    # Collect all conflicts from both groups
+    my $init_conflicts = $self->_init_exclusive_attributes;
+    my $runtime_conflicts = $self->_runtime_exclusive_attributes;
+    
+    for my $attr_name (keys %$init_conflicts) {
+        $all_conflicts{$attr_name} = $init_conflicts->{$attr_name};
+    }
+    
+    for my $attr_name (keys %$runtime_conflicts) {
+        $all_conflicts{$attr_name} = $runtime_conflicts->{$attr_name};
+    }
+    
+    # Validate all unique conflicts
+    $self->_validate_exclusion_group( \%all_conflicts, 'conflicts' );
 
     $self->_exclusions_validated(1);
 }
