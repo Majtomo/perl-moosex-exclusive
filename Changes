@@ -1,0 +1,20 @@
+Revision history for MooseX-Trait-ExclusiveAttributes
+
+1.00    2025-09-15
+        - Initial stable release
+        - Complete implementation of mutually exclusive attributes for Moose
+        - Three conflict checking modes:
+          * conflicts_with: checked at both construction and runtime
+          * init_conflicts_with: checked only at construction
+          * runtime_conflicts_with: checked only at runtime
+        - Support for single attribute or array of attributes in all conflict types
+        - Comprehensive validation including self-exclusion and non-existent attribute checks
+        - Full inheritance support for conflicting attributes
+        - Robust constructor and runtime conflict detection
+        - Extensive test suite with 88 tests across multiple scenarios
+        - Clean, maintainable code architecture with refactored storage system
+        - Complete documentation with examples and usage patterns
+        - Formatted code following Perl best practices
+
+0.01    2025-09-12
+        - Development version with basic conflicts_with functionality

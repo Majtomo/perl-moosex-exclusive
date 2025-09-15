@@ -5,12 +5,22 @@ use Moose ();
 use Moose::Exporter;
 use Moose::Util::MetaRole;
 
-our $VERSION = '0.01';
+our $VERSION = '1.00';
 
 Moose::Exporter->setup_import_methods(
     also        => 'Moose',
     meta_lookup => sub { Class::MOP::class_of(shift) },
 );
+
+=head2 init_meta
+
+    MooseX::Trait::ExclusiveAttributes->init_meta(for_class => 'MyClass');
+
+This method is called automatically when you C<use MooseX::Trait::ExclusiveAttributes> 
+in your class. It applies the necessary metaroles to enable exclusive attribute
+functionality. You should not need to call this method directly.
+
+=cut
 
 sub init_meta ( $class, %args ) {
     my $for_class = $args{for_class};
@@ -284,7 +294,7 @@ MooseX::Trait::ExclusiveAttributes - A trait for mutually exclusive attributes
 
 =head1 VERSION
 
-Version 0.01
+Version 1.00
 
 =head1 SYNOPSIS
 
